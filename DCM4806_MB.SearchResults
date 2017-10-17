@@ -1,0 +1,8 @@
+---- SoftTimerStart Matches (7 in 5 files) ----
+InfraRecord.c (user):                SoftTimerStart(TIMER_INFRA_RECV,4,0,NULL,NULL);
+InfraRecord.c (user):		//SoftTimerStart(TIMER_INFRA_RECV,4);
+Main.c (user):			SoftTimerStart(TIMER_GET_REAL_DATA,20,NULL,NULL);
+Main.c (user):	SoftTimerStart(TIMER_INIT_PARAM,20,SoftTimer_InitParam_Timeout_CB,NULL);
+SoftTimer.c (user):extern void SoftTimerStart(uint32_t TimerID, uint32_t n100Ms,uint32_t Mode,PTimeOutCallBack pTimeOutCallBack,void *pHandle)
+SoftTimer.h (user):extern void SoftTimerStart(uint32_t TimerID, uint32_t n100Ms,uint32_t Mode,PTimeOutCallBack pTimeOutCallBack,void *pHandle);
+Ydt1363.c (user):		SoftTimerStart(TIMER_DOWNLOAD_INFRA_CMD,600,ProtocolProc_YDT1363_3_Set_DownLoadCmd_TimeOutCallBack,&SavedRcd);//1min¶¨Ê±

@@ -1,0 +1,328 @@
+
+/*****************************************************************************
+*infra_modbus.c
+******************************************************************************/
+#include <string.h>
+#include <stddef.h>
+#include <stdio.h>
+#include "infra_modbus.h"
+
+// --------------------------------------------------------------
+//      CRC16计算方法1:使用2个256长度的校验表
+// --------------------------------------------------------------
+const uint8 chCRCHTalbe[] =                                 // CRC 高位字节值表
+{
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40,
+0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41,
+0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+0x00, 0xC1, 0x81, 0x40
+};
+
+const uint8 chCRCLTalbe[] =                                 // CRC 低位字节值表
+{
+0x00, 0xC0, 0xC1, 0x01, 0xC3, 0x03, 0x02, 0xC2, 0xC6, 0x06, 0x07, 0xC7,
+0x05, 0xC5, 0xC4, 0x04, 0xCC, 0x0C, 0x0D, 0xCD, 0x0F, 0xCF, 0xCE, 0x0E,
+0x0A, 0xCA, 0xCB, 0x0B, 0xC9, 0x09, 0x08, 0xC8, 0xD8, 0x18, 0x19, 0xD9,
+0x1B, 0xDB, 0xDA, 0x1A, 0x1E, 0xDE, 0xDF, 0x1F, 0xDD, 0x1D, 0x1C, 0xDC,
+0x14, 0xD4, 0xD5, 0x15, 0xD7, 0x17, 0x16, 0xD6, 0xD2, 0x12, 0x13, 0xD3,
+0x11, 0xD1, 0xD0, 0x10, 0xF0, 0x30, 0x31, 0xF1, 0x33, 0xF3, 0xF2, 0x32,
+0x36, 0xF6, 0xF7, 0x37, 0xF5, 0x35, 0x34, 0xF4, 0x3C, 0xFC, 0xFD, 0x3D,
+0xFF, 0x3F, 0x3E, 0xFE, 0xFA, 0x3A, 0x3B, 0xFB, 0x39, 0xF9, 0xF8, 0x38,
+0x28, 0xE8, 0xE9, 0x29, 0xEB, 0x2B, 0x2A, 0xEA, 0xEE, 0x2E, 0x2F, 0xEF,
+0x2D, 0xED, 0xEC, 0x2C, 0xE4, 0x24, 0x25, 0xE5, 0x27, 0xE7, 0xE6, 0x26,
+0x22, 0xE2, 0xE3, 0x23, 0xE1, 0x21, 0x20, 0xE0, 0xA0, 0x60, 0x61, 0xA1,
+0x63, 0xA3, 0xA2, 0x62, 0x66, 0xA6, 0xA7, 0x67, 0xA5, 0x65, 0x64, 0xA4,
+0x6C, 0xAC, 0xAD, 0x6D, 0xAF, 0x6F, 0x6E, 0xAE, 0xAA, 0x6A, 0x6B, 0xAB,
+0x69, 0xA9, 0xA8, 0x68, 0x78, 0xB8, 0xB9, 0x79, 0xBB, 0x7B, 0x7A, 0xBA,
+0xBE, 0x7E, 0x7F, 0xBF, 0x7D, 0xBD, 0xBC, 0x7C, 0xB4, 0x74, 0x75, 0xB5,
+0x77, 0xB7, 0xB6, 0x76, 0x72, 0xB2, 0xB3, 0x73, 0xB1, 0x71, 0x70, 0xB0,
+0x50, 0x90, 0x91, 0x51, 0x93, 0x53, 0x52, 0x92, 0x96, 0x56, 0x57, 0x97,
+0x55, 0x95, 0x94, 0x54, 0x9C, 0x5C, 0x5D, 0x9D, 0x5F, 0x9F, 0x9E, 0x5E,
+0x5A, 0x9A, 0x9B, 0x5B, 0x99, 0x59, 0x58, 0x98, 0x88, 0x48, 0x49, 0x89,
+0x4B, 0x8B, 0x8A, 0x4A, 0x4E, 0x8E, 0x8F, 0x4F, 0x8D, 0x4D, 0x4C, 0x8C,
+0x44, 0x84, 0x85, 0x45, 0x87, 0x47, 0x46, 0x86, 0x82, 0x42, 0x43, 0x83,
+0x41, 0x81, 0x80, 0x40
+};
+
+uint16 CRC16_1(uint8* pchMsg, uint16 wDataLen)
+{
+		uint8 chCRCHi = 0xFF; 		// 高CRC字节初始化
+		uint8 chCRCLo = 0xFF; 		// 低CRC字节初始化
+		uint16 wIndex;            // CRC循环中的索引
+
+		while (wDataLen--)
+		{
+				// 计算CRC
+				wIndex 	= chCRCLo ^ *pchMsg++ ;
+				chCRCLo = chCRCHi ^ chCRCHTalbe[wIndex];
+				chCRCHi = chCRCLTalbe[wIndex] ;
+		}
+
+		return ((chCRCHi << 8) | chCRCLo) ;
+}
+
+
+/*******************************************************************************
+*发送数据函数  
+*addr   :地址
+*funcode:功能代码号
+*inbuff:输入数据地址  
+*outbuff:输出数据地址 addr+ funcode + 长度(2字节,高位低地址，地位高地址)+ 命令编号(1)+厂方编号(1)+型号编号(1)+CRC(2)
+*outlen:输出数据区outbuff长度，程序结束输出为outbuff中数据长度
+********************************************************************************/
+uint8 modbus_tx_fun(uint8 addr, uint8 funcode, const uint8 *inbuff, uint16 inlen, uint8 *outbuff, uint16 outlen)
+{
+		uint16 len = 0;
+		uint16 val=0;
+	
+    if(NULL==inbuff)
+    {
+        return PROTOCAL_FORMAT_ERROR;
+    }
+		if((NULL==outbuff)||(outlen<10))
+		{
+				return PROTOCAL_FORMAT_ERROR;
+		}
+    len=inlen;
+    
+    switch(funcode) 
+		{ 
+			case PROTOCAL_CODE_CTRL:   //05H
+					if(3!=len)
+					{
+							return PROTOCAL_FORMAT_ERROR;
+					}
+					if((*inbuff)>31)
+					{
+							return PROTOCAL_FORMAT_ERROR;
+					}            
+					outbuff[0] = addr;
+					outbuff[1] = funcode;
+					outbuff[2] = 0x00;
+					outbuff[3] = 0x03;
+					outbuff[4] = (*inbuff)-1;       //命令号
+					outbuff[5] = *(inbuff+1);   		//工厂序列号
+					outbuff[6] = *(inbuff+2);   		//模式序列号
+					val = CRC16_1(outbuff, 7);
+					outbuff[7] = val&0xff;
+					outbuff[8] = (val>>8)&0xff;     //CRC低地址存高八位，高地址存低八位
+					outbuff[9] = '\0';
+					break;
+			case PROTOCAL_CODE_LEARN:  //06H
+					if (3!=len)
+					{
+							return PROTOCAL_FORMAT_ERROR;
+					} 
+					if((*inbuff)>31)
+					{
+							return PROTOCAL_FORMAT_ERROR;
+					}            
+					outbuff[0] = addr;
+					outbuff[1] = funcode;
+					outbuff[2] = 0x00;
+					outbuff[3] = 0x03;
+					outbuff[4] = (*inbuff)-1;
+					outbuff[5] = 0x00;      				//默认为0    *(inbuff+1);   
+					outbuff[6] = 0x00;      				//默认为0    *(inbuff+2);   
+					val = CRC16_1(outbuff, 7);
+					outbuff[7] = (uint8)(val&0xff); 
+					outbuff[8] = (uint8)((val>>8)&0xff);
+					outbuff[9] = '\0';
+					break; 
+			case PROTOCAL_CODE_CHECK_STA:       //21H
+			case PROTOCAL_CODE_QUERY_START:     //28H
+					if (3!=len)
+					{
+							return PROTOCAL_FORMAT_ERROR;
+					}
+					if((*inbuff)>31)
+					{
+							return PROTOCAL_FORMAT_ERROR;
+					}              
+					outbuff[0]= addr;
+					outbuff[1] = funcode;
+					outbuff[2] = 0x00;
+					outbuff[3] = 0x03;
+					outbuff[4] = 0x00;
+					outbuff[5] = 0XFF;
+					outbuff[6] = 0x01;
+					val = CRC16_1(outbuff, 7);
+					outbuff[7] = (uint8)(val&0xff);  
+					outbuff[8] = (uint8)((val>>8)&0xff);
+					outbuff[9] = '\0';
+					break;         
+    }
+    return PROTOCAL_NORMAL;
+}
+
+//接收数据函数
+/****************************************
+*功能码05H 06H 输出的buff中存放的是  
+*outbuff[0]是功能代码 
+*outbuff[1]命令编号成功值:1~15 16-32保留 失败:0XFF
+*****************************************/
+uint8 modbus_rx_05h_06h(const uint8 *inbuff, uint16 inlen, uint8 *outbuff, uint16 *pOutlen)    //05h 06h
+{
+		if(*pOutlen<3 || inlen <5)
+		{
+				return ERR;
+		}
+    if((*(inbuff+4)>31)&&(*(inbuff+4)!=0XFF))
+    {
+        return PROTOCAL_FORMAT_ERROR; 
+    } 
+    outbuff[0] = *(inbuff+1);   //功能代码号
+    outbuff[1] = *(inbuff+2);   //执行的命令编号
+    outbuff[2] = '\0';
+    *pOutlen = 2;
+    return EOK;
+}
+/*******************************************
+*功能码 : 21H 
+*输出的buff中存放已经学过的"命令号"集合
+********************************************/
+uint8 modbus_rx_21h(const uint8 *inbuff, uint16 inlen, uint8 *outbuff, uint16 *pOutlen)
+{
+		uint16 j = 0;
+		int i=0;
+		if(*pOutlen<33 || inlen <5)
+		{
+				return ERR;
+		}
+    for(i=0;i<32 && i<inlen-4;i++)
+    {
+        if(*(inbuff+3+i)==1)    //地址(1)+功能码(1)+长度(2)
+        {
+            outbuff[j++]=i+1;
+        }   
+    }
+    outbuff[j]='\0';
+    *pOutlen = j;
+    return EOK;
+}
+
+/************************************************
+*功能码: 28H    数据从第五位开始,即iobuff + 4
+*outbuff中数据存储顺序如下:
+*1.当前执行的命令号(FF是复位状值)
+*2.开关机状态(1-开，0-关)
+*3.设定温度(HEX)
+*4.运行模式(0-自动，1-制冷、2-除湿、3-通风、4-制热)
+*5.风速(1-小风、2-中风、3-大风)
+*************************************************/
+uint8 modbus_rx_28h(const uint8 *inbuff, uint16 inlen, uint8 *outbuff, uint16 *pOutlen)
+{
+		if(*pOutlen<6 || inlen <10)
+		{
+				return ERR;
+		}
+    if(0XFF == *(inbuff+4))
+    {
+        ;   //空
+    }
+    else if((*(inbuff+4)<0)||(*(inbuff+4)>32)||(*(inbuff+5)>1)||(*(inbuff+7)>4)||(*(inbuff+8)>3)||(*(inbuff+9)==0))
+		{
+				return PROTOCAL_DATA_INVALID; 
+		}
+    outbuff[0] = *(inbuff+4)+1;               //当前执行的命令号
+    outbuff[1] = *(inbuff+5);                	//开机状态
+    outbuff[2] = *(inbuff+6);                 //设定温度
+    outbuff[3] = *(inbuff+7);                 //运行模式
+    outbuff[4] = *(inbuff+8);                	//风速
+		outbuff[5] = '\0';
+    *pOutlen = 5;
+    return EOK;
+}
+    
+
+/*********************************************************
+*接受数据主函数，分析报文正常与否，按功能码去运行相应的函数
+*inbuff:接收的数据报文存储地址
+*inlen:inbuff中的数据长度
+*outbuff:解析报文后输出数据
+*outlen:outbuff长度
+**********************************************************/
+uint8 modbus_rx_fun(const uint8 *inbuff, const uint16 inlen, uint8 *outbuff, uint16 *pOutlen)
+{
+		uint16 	tmp1=0;
+		uint16 	tmp2=0;
+		uint8		ret=0;
+		
+    if(NULL==inbuff)
+    {
+        //printf("inbuff is NULL!");
+        return PROTOCAL_DATA_INVALID;
+    }
+		if(NULL==outbuff)
+    {
+				return PROTOCAL_DATA_INVALID;	
+    }
+    //if((inlen != strlen((char*)inbuff))||(inlen<5))
+		if(inlen<5)
+    {
+        //printf("len=%d,strlen(inbuff)=%d", inlen,strlen((char*)inbuff));
+				return PROTOCAL_DATA_INVALID;  
+    }
+    if(PROTOCAL_ADDR != *(inbuff))
+    {
+				
+        //printf("inbuff->ADDR=%d", *(inbuff));
+				return PROTOCAL_DATA_INVALID;
+    }
+		
+    tmp1 = CRC16_1((uint8*)inbuff, inlen-2);
+    tmp2 = ((uint16)(*(inbuff+inlen-1)&0xff)<<8) + ((*(inbuff+inlen-2))&0xff);   //CRC低地址存高位，高地址存低位
+		
+    if (tmp1 != tmp2)
+    {
+        //printf("CRC_Check is FAIL !!!");
+        return PROTOCAL_CRC_ERROR;
+    }  
+		
+    switch(*(inbuff+1))
+		{
+			case PROTOCAL_CODE_CTRL:       										//05
+			case PROTOCAL_CODE_LEARN:      										//06
+					ret = modbus_rx_05h_06h(inbuff,inlen,outbuff, pOutlen); 
+					if(ret != EOK)
+							return PROTOCAL_DATA_INVALID;
+					break;
+			case PROTOCAL_CODE_CHECK_STA:  										//21H
+					ret = modbus_rx_21h(inbuff, inlen,outbuff, pOutlen);
+					if(ret != EOK)
+							return PROTOCAL_DATA_INVALID;
+					break;
+			case PROTOCAL_CODE_QUERY_START:    								//28H
+					ret = modbus_rx_28h(inbuff,inlen, outbuff, pOutlen);
+					if(ret != EOK)
+							return PROTOCAL_DATA_INVALID;
+					break;
+			default:
+					*pOutlen=0;
+					return PROTOCAL_DATA_INVALID;
+    }
+		
+    return PROTOCAL_NORMAL;  
+}
+
+
+
+
